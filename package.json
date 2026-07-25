@@ -5,12 +5,14 @@
   "private": true,
   "scripts": {
     "dev": "nitrostack-cli dev",
+    "dev:http": "MCP_TRANSPORT_TYPE=http node dist/main.js",
     "build": "nitrostack-cli build",
     "start": "node dist/index.js",
     "nitrostack:start": "nitrostack-cli build && node dist/main.js",
     "widgets:dev": "cd widgets && next dev -p 3001",
     "widgets:build": "cd widgets && next build",
-    "db:migrate": "supabase db push",
+    "db:migrate": "npx supabase db push",
+    "db:migrate:ci": "npx supabase db push --password $SUPABASE_DB_PASSWORD",
     "db:seed": "supabase db seed run",
     "lint": "eslint src/**/*.ts",
     "typecheck": "tsc --noEmit"
@@ -25,9 +27,9 @@
   },
   "devDependencies": {
     "@nitrostack/widgets": "^1.0.0",
+    "@types/express": "^5.0.6",
     "@types/leaflet": "^1.9.0",
     "@types/node": "^22.0.0",
-    "@types/react": "19.2.17",
     "leaflet": "^1.9.0",
     "next": "^15.0.0",
     "react": "^19.0.0",

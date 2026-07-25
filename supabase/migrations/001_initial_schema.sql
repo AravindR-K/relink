@@ -1,18 +1,17 @@
 -- ============================================================================
 -- CircuLink: Agentic AI Manufacturing Waste-to-Revenue Platform
 -- Supabase Database Schema (PostgreSQL + pgvector + PostGIS)
+-- IDEMPOTENT: safe to run multiple times (IF NOT EXISTS / DROP IF EXISTS)
 -- ============================================================================
 
--- Enable extensions
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS postgis;
 
 -- ============================================================================
--- TABLES
+-- TABLES (idempotent)
 -- ============================================================================
 
--- Factory / Manufacturing Unit (tenant + seller identity)
-CREATE TABLE factories (
+CREATE TABLE IF NOT EXISTS factories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   mobile TEXT NOT NULL UNIQUE,
@@ -29,8 +28,7 @@ CREATE TABLE factories (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Material Listing (waste/byproduct catalog)
-CREATE TABLE listings (
+CREATE TABLE IF NOT EXISTS listings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id) ON DELETE CASCADE,
   material_type TEXT NOT NULL,
@@ -51,21 +49,7 @@ CREATE TABLE listings (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- pgvector index for material similarity search
-CREATE INDEX idx_listings_embedding ON listings
-  USING ivfflat (embedding vector_cosine_ops)
-  WITH (lists = 100);
-
--- Spatial index for location-based queries
-CREATE INDEX idx_factories_location ON factories USING GIST (location);
-
--- Material index for type-based filtering
-CREATE INDEX idx_listings_material_type ON listings (material_type);
-CREATE INDEX idx_listings_status ON listings (status);
-CREATE INDEX idx_listings_factory_id ON listings (factory_id);
-
--- Waste Forecasts (Prediction Agent output)
-CREATE TABLE waste_forecasts (
+CREATE TABLE IF NOT EXISTS waste_forecasts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id) ON DELETE CASCADE,
   predicted_material_type TEXT NOT NULL,
@@ -76,8 +60,7 @@ CREATE TABLE waste_forecasts (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Contact Reveals (audit trail: when buyer viewed seller contact)
-CREATE TABLE contact_reveals (
+CREATE TABLE IF NOT EXISTS contact_reveals (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   listing_id UUID NOT NULL REFERENCES listings(id),
   buyer_id UUID REFERENCES factories(id),
@@ -85,47 +68,75 @@ CREATE TABLE contact_reveals (
 );
 
 -- ============================================================================
--- ROW LEVEL SECURITY (Multi-tenant Factory Isolation)
+-- INDEXES (idempotent)
+-- ============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_listings_embedding ON listings
+  USING ivfflat (embedding vector_cosine_ops)
+  WITH (lists = 100);
+
+CREATE INDEX IF NOT EXISTS idx_factories_location ON factories USING GIST (location);
+CREATE INDEX IF NOT EXISTS idx_listings_material_type ON listings (material_type);
+CREATE INDEX IF NOT EXISTS idx_listings_status ON listings (status);
+CREATE INDEX IF NOT EXISTS idx_listings_factory_id ON listings (factory_id);
+
+-- ============================================================================
+-- ROW LEVEL SECURITY (idempotent via DROP IF EXISTS + CREATE)
 -- ============================================================================
 
 ALTER TABLE factories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE listings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE waste_forecasts ENABLE ROW LEVEL SECURITY;
 
--- Factory RLS: factory sees only its own record
+DROP POLICY IF EXISTS "Factory sees own record" ON factories;
 CREATE POLICY "Factory sees own record" ON factories
   FOR ALL USING (id = auth.uid());
 
--- Factory RLS: anyone can read basic factory info (name, trust_score)
+DROP POLICY IF EXISTS "Anyone reads factory public info" ON factories;
 CREATE POLICY "Anyone reads factory public info" ON factories
   FOR SELECT USING (true);
 
--- Listing RLS: factory manages its own listings
+DROP POLICY IF EXISTS "Factory manages own listings" ON listings;
 CREATE POLICY "Factory manages own listings" ON listings
   FOR ALL USING (factory_id = auth.uid())
   WITH CHECK (factory_id = auth.uid());
 
--- Listing RLS: anyone can read verified listings
+DROP POLICY IF EXISTS "Anyone reads verified listings" ON listings;
 CREATE POLICY "Anyone reads verified listings" ON listings
   FOR SELECT USING (status IN ('verified', 'matched'));
 
--- Forecast RLS: factory sees its own forecasts
+DROP POLICY IF EXISTS "Factory sees own forecasts" ON waste_forecasts;
 CREATE POLICY "Factory sees own forecasts" ON waste_forecasts
   FOR ALL USING (factory_id = auth.uid());
 
 -- ============================================================================
--- SUPABASE REALTIME (Agent Event Bus)
+-- SUPABASE REALTIME (idempotent via conditional DO block)
 -- ============================================================================
 
--- Publish tables that agents subscribe to via WebSocket
-ALTER PUBLICATION supabase_realtime ADD TABLE listings;
-ALTER PUBLICATION supabase_realtime ADD TABLE waste_forecasts;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'listings'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE listings;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'waste_forecasts'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE waste_forecasts;
+  END IF;
+END $$;
 
 -- ============================================================================
--- FUNCTIONS & TRIGGERS
+-- FUNCTIONS & TRIGGERS (idempotent via CREATE OR REPLACE / DROP IF EXISTS)
 -- ============================================================================
 
--- Auto-update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_modified_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -134,28 +145,35 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS update_factories_modtime ON factories;
 CREATE TRIGGER update_factories_modtime
   BEFORE UPDATE ON factories
   FOR EACH ROW EXECUTE FUNCTION update_modified_column();
 
+DROP TRIGGER IF EXISTS update_listings_modtime ON listings;
 CREATE TRIGGER update_listings_modtime
   BEFORE UPDATE ON listings
   FOR EACH ROW EXECUTE FUNCTION update_modified_column();
 
 -- ============================================================================
--- SEED DATA (Sample industrial zones + factories for hackathon demo)
+-- SEED DATA (idempotent: ON CONFLICT DO NOTHING; only run if factories empty)
 -- ============================================================================
 
-INSERT INTO factories (name, mobile, gstin, location, industry_type, trust_score) VALUES
-  ('Auto Stampings Pvt Ltd', '+91-9876543210', '27AABCD1234E1Z5', ST_GeogFromText('POINT(73.85 18.75)'), 'automotive', 92),
-  ('Precision Dies & Castings', '+91-9876543211', '27BBCDE5678F2Z6', ST_GeogFromText('POINT(73.80 18.62)'), 'metal_fab', 85),
-  ('PolyPlast Industries', '+91-9876543212', '27CCDEF9012G3Z7', ST_GeogFromText('POINT(73.68 18.72)'), 'plastic', 88),
-  ('SteelFab Engineering', '+91-9876543213', '27DDEFG3456H4Z8', ST_GeogFromText('POINT(73.84 18.64)'), 'metal_fab', 74),
-  ('Chennai Copper Works', '+91-9876543214', '33EEFGH7890I5Z9', ST_GeogFromText('POINT(79.95 12.97)'), 'electronics', 90);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM factories LIMIT 1) THEN
+    INSERT INTO factories (name, mobile, gstin, location, industry_type, trust_score) VALUES
+      ('Auto Stampings Pvt Ltd', '+91-9876543210', '27AABCD1234E1Z5', ST_GeogFromText('POINT(73.85 18.75)'), 'automotive', 92),
+      ('Precision Dies & Castings', '+91-9876543211', '27BBCDE5678F2Z6', ST_GeogFromText('POINT(73.80 18.62)'), 'metal_fab', 85),
+      ('PolyPlast Industries', '+91-9876543212', '27CCDEF9012G3Z7', ST_GeogFromText('POINT(73.68 18.72)'), 'plastic', 88),
+      ('SteelFab Engineering', '+91-9876543213', '27DDEFG3456H4Z8', ST_GeogFromText('POINT(73.84 18.64)'), 'metal_fab', 74),
+      ('Chennai Copper Works', '+91-9876543214', '33EEFGH7890I5Z9', ST_GeogFromText('POINT(79.95 12.97)'), 'electronics', 90);
 
-INSERT INTO listings (factory_id, material_type, grade, quantity_kg, seller_quoted_price_per_kg, ai_benchmark_price_per_kg, negotiable, usage_classification, health_flags, status) VALUES
-  ((SELECT id FROM factories WHERE name = 'Auto Stampings Pvt Ltd'), 'aluminum_scrap', 'B', 500, 140, 148, true, ARRAY['remelting', 'casting', 'die_casting'], ARRAY['surface_oxidation'], 'verified'),
-  ((SELECT id FROM factories WHERE name = 'PolyPlast Industries'), 'hdpe_regrind', 'A', 2000, 32, 35, true, ARRAY['injection_molding', 'pipe_extrusion', 'pallet_molding'], ARRAY[]::text[], 'verified'),
-  ((SELECT id FROM factories WHERE name = 'SteelFab Engineering'), 'steel_offcut', 'B', 1500, 28, 32, true, ARRAY['remelting', 'rebar_manufacturing', 'forging'], ARRAY['rust'], 'verified'),
-  ((SELECT id FROM factories WHERE name = 'Precision Dies & Castings'), 'aluminum_scrap', 'A', 800, 145, 155, false, ARRAY['remelting', 'extrusion', 'rolling_mill'], ARRAY[]::text[], 'verified'),
-  ((SELECT id FROM factories WHERE name = 'Chennai Copper Works'), 'copper_wire', 'B', 300, 620, 650, true, ARRAY['remelting', 'wire_drawing', 'electrical_components'], ARRAY['mixed_materials'], 'verified');
+    INSERT INTO listings (factory_id, material_type, grade, quantity_kg, seller_quoted_price_per_kg, ai_benchmark_price_per_kg, negotiable, usage_classification, health_flags, status) VALUES
+      ((SELECT id FROM factories WHERE name = 'Auto Stampings Pvt Ltd'), 'aluminum_scrap', 'B', 500, 140, 148, true, ARRAY['remelting', 'casting', 'die_casting'], ARRAY['surface_oxidation'], 'verified'),
+      ((SELECT id FROM factories WHERE name = 'PolyPlast Industries'), 'hdpe_regrind', 'A', 2000, 32, 35, true, ARRAY['injection_molding', 'pipe_extrusion', 'pallet_molding'], ARRAY[]::text[], 'verified'),
+      ((SELECT id FROM factories WHERE name = 'SteelFab Engineering'), 'steel_offcut', 'B', 1500, 28, 32, true, ARRAY['remelting', 'rebar_manufacturing', 'forging'], ARRAY['rust'], 'verified'),
+      ((SELECT id FROM factories WHERE name = 'Precision Dies & Castings'), 'aluminum_scrap', 'A', 800, 145, 155, false, ARRAY['remelting', 'extrusion', 'rolling_mill'], ARRAY[]::text[], 'verified'),
+      ((SELECT id FROM factories WHERE name = 'Chennai Copper Works'), 'copper_wire', 'B', 300, 620, 650, true, ARRAY['remelting', 'wire_drawing', 'electrical_components'], ARRAY['mixed_materials'], 'verified');
+  END IF;
+END $$;

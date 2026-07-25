@@ -1,17 +1,28 @@
 import { type ExecutionContext, type Guard } from '@nitrostack/core';
+import { jwtVerify } from 'jose';
+import { config } from '../config/index.js';
 
 export class JwtGuard implements Guard {
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const authHeader = context.metadata?.authorization as string | undefined;
 
-    if (!authHeader) {
-      return true;
-    }
+    if (!authHeader?.startsWith('Bearer ')) return false;
 
-    const token = authHeader.replace('Bearer ', '');
-    context.auth = {
-      subject: 'authenticated-user',
-    };
-    return true;
+    const token = authHeader.slice(7);
+    const secret = new TextEncoder().encode(config.jwt.secret);
+
+    try {
+      const { payload } = await jwtVerify(token, secret);
+
+      context.auth = {
+        subject: payload.sub as string,
+        scopes: (payload.scopes as string[]) || [],
+      };
+
+
+      return true;
+    } catch {
+      return false;
+    }
   }
 }

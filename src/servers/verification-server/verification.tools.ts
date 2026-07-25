@@ -1,4 +1,5 @@
 import { ToolDecorator as Tool, z, ExecutionContext, UseGuards, Cache, RateLimit } from '@nitrostack/core';
+import { JwtGuard } from '../../guards/jwt.guard.js';
 import { getSupabaseClient } from '../../services/supabase.service.js';
 import { analyzeMaterialPhoto } from '../../services/vision.service.js';
 import { getMarketBenchmark, validateSellerPrice } from '../../services/pricing.service.js';
@@ -31,7 +32,7 @@ export class VerificationTools {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     invocation: { invoking: 'Running health analysis...', invoked: 'Analysis complete' },
   })
-  @UseGuards()
+  @UseGuards(JwtGuard)
   async analyzeMaterialHealth(input: z.infer<typeof AnalyzeHealthSchema>, ctx: ExecutionContext) {
     const supabase = getSupabaseClient();
 
