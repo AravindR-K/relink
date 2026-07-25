@@ -2,7 +2,7 @@ export interface MaterialRequirement {
   material_type: string;
   quantity_kg: number;
   max_price_per_kg?: number;
-  required_grade?: 'A' | 'B' | 'C';
+  required_grade?: 'A' | 'B' | 'C' | 'U';
 }
 
 export interface SupplierOption {

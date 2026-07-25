@@ -83,7 +83,7 @@ export class IntakeTools {
         mobile: input.mobile,
         whatsapp_opt_in: input.whatsapp_opt_in,
         gstin: input.gstin || null,
-        location: `POINT(${input.location.lng} ${input.location.lat})`,
+        location: { type: 'Point', coordinates: [input.location.lng, input.location.lat] },
         industry_type: input.industry_type,
       })
       .select()

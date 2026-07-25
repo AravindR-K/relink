@@ -42,14 +42,13 @@ export function createApiRouter(): Router {
         return;
       }
 
-      const locationStr = lat && lng ? `POINT(${lng} ${lat})` : null;
       const { data: factory, error } = await supabase
         .from('factories')
         .insert({
           name: factory_name,
           mobile: String(mobile),
           gstin: gstin || null,
-          location: locationStr as string | undefined,
+          location: lat && lng ? { type: 'Point', coordinates: [Number(lng), Number(lat)] } : null,
           industry_type,
           whatsapp_opt_in: Boolean(whatsapp_opt_in),
         })
