@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "nitrostack-cli dev",
     "build": "nitrostack-cli build",
-    "start": "nitrostack-cli build && node dist/main.js",
+    "prestart": "nitrostack-cli build",
+    "start": "node dist/main.js",
     "widgets:dev": "cd widgets && next dev -p 3001",
     "widgets:build": "cd widgets && next build",
     "db:migrate": "supabase db push",
