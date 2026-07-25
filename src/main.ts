@@ -5,6 +5,8 @@ import { createApiRouter } from './api/routes.js';
 async function bootstrap() {
   const server = await McpApplicationFactory.create(AppModule);
 
+  await server.start();
+
   const httpTransport = server.getHttpTransport();
   if (httpTransport?.getApp) {
     const app = httpTransport.getApp();

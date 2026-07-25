@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "nitrostack-cli dev",
+    "dev:http": "MCP_TRANSPORT_TYPE=http node dist/main.js",
     "build": "nitrostack-cli build",
     "start": "node dist/index.js",
     "nitrostack:start": "nitrostack-cli build && node dist/main.js",
