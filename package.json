@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nitrostack-cli dev",
     "build": "nitrostack-cli build",
-    "start": "node dist/main.js",
+    "start": "nitrostack-cli build && node dist/main.js",
     "widgets:dev": "cd widgets && next dev -p 3001",
     "widgets:build": "cd widgets && next build",
     "db:migrate": "supabase db push",
@@ -15,16 +15,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@nitrostack/cli": "^1.0.0",
     "@nitrostack/core": "^1.0.0",
     "@supabase/supabase-js": "^2.49.0",
     "@google/generative-ai": "^0.21.0",
-    "zod": "^3.24.0"
+    "zod": "^3.24.0",
+    "typescript": "^5.7.0"
   },
   "devDependencies": {
-    "@nitrostack/cli": "^1.0.0",
     "@nitrostack/widgets": "^1.0.0",
     "@types/node": "^22.0.0",
-    "typescript": "^5.7.0",
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
