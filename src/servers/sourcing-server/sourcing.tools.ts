@@ -1,4 +1,4 @@
-import { ToolDecorator as Tool, z, ExecutionContext, UseGuards, Cache, Widget } from '@nitrostack/core';
+import { ToolDecorator as Tool, z, ExecutionContext, UseGuards, Cache } from '@nitrostack/core';
 import { getSupabaseClient } from '../../services/supabase.service.js';
 import type { IndustrialZone } from '../../types/index.js';
 
@@ -41,7 +41,6 @@ export class SourcingTools {
   })
   @UseGuards()
   @Cache({ ttl: 300, key: (input) => `search:${JSON.stringify(input)}` })
-  @Widget('search-results-grid')
   async searchMaterials(input: z.infer<typeof SearchMaterialsSchema>, ctx: ExecutionContext) {
     const supabase = getSupabaseClient();
 
@@ -122,7 +121,6 @@ export class SourcingTools {
     invocation: { invoking: 'Analyzing industrial zones...', invoked: 'Recommendations ready' },
   })
   @Cache({ ttl: 1800 })
-  @Widget('location-recommendation-map')
   async recommendBestPlaceToSource(input: z.infer<typeof LocationRecommendationSchema>, ctx: ExecutionContext) {
     const supabase = getSupabaseClient();
 

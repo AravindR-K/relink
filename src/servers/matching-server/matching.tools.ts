@@ -1,4 +1,4 @@
-import { ToolDecorator as Tool, z, ExecutionContext, RateLimit, Widget } from '@nitrostack/core';
+import { ToolDecorator as Tool, z, ExecutionContext, RateLimit } from '@nitrostack/core';
 import { getSupabaseClient } from '../../services/supabase.service.js';
 import { solveOptimalMatching, type MaterialRequirement, type SupplierOption } from '../../services/matching.solver.js';
 
@@ -30,7 +30,6 @@ export class MatchingTools {
     invocation: { invoking: 'Solving optimal supplier allocation...', invoked: 'Optimal match found' },
   })
   @RateLimit({ requests: 30, window: '1m' })
-  @Widget('matching-optimization-dashboard')
   async findOptimalMatches(input: z.infer<typeof FindOptimalMatchesSchema>, ctx: ExecutionContext) {
     const supabase = getSupabaseClient();
 

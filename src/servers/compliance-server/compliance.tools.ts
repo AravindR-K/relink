@@ -1,4 +1,4 @@
-import { ToolDecorator as Tool, z, ExecutionContext, UseGuards, Cache, Widget } from '@nitrostack/core';
+import { ToolDecorator as Tool, z, ExecutionContext, UseGuards, Cache } from '@nitrostack/core';
 import { getSupabaseClient } from '../../services/supabase.service.js';
 import { notifyBuyersAboutForecast } from '../../services/notification.service.js';
 
@@ -26,7 +26,6 @@ export class ComplianceTools {
     invocation: { invoking: 'Running waste forecast model...', invoked: 'Forecast ready' },
   })
   @Cache({ ttl: 3600 })
-  @Widget('forecast-chart')
   async forecastWasteGeneration(input: z.infer<typeof ForecastSchema>, ctx: ExecutionContext) {
     const supabase = getSupabaseClient();
 
@@ -131,7 +130,6 @@ export class ComplianceTools {
     invocation: { invoking: 'Generating compliance report...', invoked: 'Report ready' },
   })
   @UseGuards()
-  @Widget('compliance-dashboard')
   async getComplianceReport(input: z.infer<typeof ComplianceReportSchema>, ctx: ExecutionContext) {
     const supabase = getSupabaseClient();
 
@@ -183,7 +181,6 @@ export class ComplianceTools {
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   })
   @Cache({ ttl: 86400 })
-  @Widget('esg-impact-dashboard')
   async calculateESGImpact(input: z.infer<typeof ESGImpactSchema>, ctx: ExecutionContext) {
     const supabase = getSupabaseClient();
 
