@@ -1,71 +1,131 @@
-# CircuLink — Buyer Sourcing Agent: Complete Context & Handoff Summary
+# CircuLink — Buyer Sourcing Agent: Complete Technical Handoff & Context Master
 
-## 1. Executive Summary
-The **Buyer Sourcing Agent** for CircuLink (B2B Industrial Material Procurement Platform) is fully implemented. It replaces simple distance-based search with an enterprise AI procurement assistant capable of Bill of Materials (BOM) decomposition, progressive radius search expansion, weighted multi-criteria supplier scoring, industrial zone clustering, multi-supplier allocation optimization, and WhatsApp/SMS quote generation.
+[ignoring loop detection]
 
----
-
-## 2. Implemented Architecture & Code Structure
-
-### Core Services
-1. **`src/services/geo.utils.ts`**
-   - Centralized Haversine distance calculator.
-   - Predefined 15 Maharashtra industrial zones (Chakan, Pimpri, Thane, Bhosari, Tarapur, etc.).
-   - Dynamic DBSCAN clustering (`discoverZonesFromFactories`) to aggregate factory clusters into active sourcing zones.
-   - Standard progressive radius constants: `[10, 25, 50, 75, 100]` km.
-
-2. **`src/services/sourcing.service.ts`**
-   - **Mode 1 (BOM Decomposition):** `decomposeProductToBOM()` infers raw materials & recyclable substitutes using Gemini LLM, enriched with pricing benchmarks.
-   - **Progressive Radius Search:** `progressiveRadiusSearch()` expands radius step-by-step until buyer's material demand is met.
-   - **Weighted Procurement Scoring:** `scoreSupplier()` evaluates 6 dimensions: Distance (20%), Price (25%), Grade (15%), Trust Score (20%), Quantity Coverage (10%), Verification (10%).
-   - **Zone Intelligence:** `analyzeZones()` computes actual density, inventory, quantity-weighted average grade, average price, and average trust per zone.
-   - **Multi-Supplier Solver:** `findOptimalCombination()` uses constraint satisfaction greedy optimization (`matching.solver.ts`) to split demand across top suppliers.
-   - **AI Reasoning:** `generateProcurementReasoning()` produces concise, plain-text procurement recommendations.
-
-3. **`src/servers/sourcing-server/sourcing.tools.ts`**
-   - 8 NitroStack MCP Tools:
-     1. `decompose_product_to_bom`: Mode 1 product-to-BOM generator.
-     2. `intelligent_source_materials`: Full multi-step procurement pipeline.
-     3. `search_materials`: Weighted multi-criteria search.
-     4. `recommend_best_place_to_source`: Cluster & zone recommendations.
-     5. `compare_listings`: Side-by-side comparison with score breakdowns.
-     6. `request_quote`: Formal quote request triggering WhatsApp/SMS notifications.
-     7. `get_seller_contact`: Discloses seller mobile number for direct human negotiation.
-     8. `save_search`: Watcher search registration.
-
-4. **`src/types/index.ts`**
-   - Added `BOMItem`, `ProcurementRequirement`, `SupplierScore`, `SourcingZone`, `SupplierCombination`, `ProcurementPlan`.
-
-### Frontend Widgets (React / Next.js)
-1. **`widgets/bom-visualizer/page.tsx`**: Visualizes AI-generated BOM with material cards, grade badges, market benchmarks, virgin price comparisons, and substitute chips.
-2. **`widgets/procurement-plan/page.tsx`**: Interactive procurement plan dashboard displaying search radius steps, recommended zones, multi-supplier allocations, ranked suppliers, and AI reasoning.
+> **Purpose of this Document:** This master document contains the complete context, architectural design, database schemas, mathematical formulas, tool signatures, file maps, and implementation details for the **Buyer Sourcing Agent** in CircuLink. Use this file to resume work in **OpenCode** or any other environment without losing any detail.
 
 ---
 
-## 3. Verification & Testing
-Run automated unit tests anytime:
-```powershell
-npx tsx C:\Users\admin\.gemini\antigravity\brain\aac31081-c490-4f74-8ec0-17f7dcd8f8cb\scratch\test_buyer_sourcing.mjs
+## 1. Project Overview & Platform Identity
+
+- **Platform Name:** CircuLink
+- **Domain:** Enterprise B2B Industrial Raw Material & Reusable Industrial Waste Procurement Platform (Not retail e-commerce).
+- **Core Value Proposition:** Connects manufacturing enterprises sourcing raw materials (metals, plastics, chemicals) with industrial sellers offering manufacturing scrap/byproducts (aluminum scrap, HDPE regrind, steel offcuts) to divert waste and monetize industrial byproducts.
+- **Tech Stack:**
+  - **Framework:** NitroStack MCP (Model Context Protocol) Server (`@nitrostack/core`, `@nitrostack/cli`)
+  - **Database & Event Bus:** Supabase (PostgreSQL with PostGIS geography, Realtime subscriptions)
+  - **AI Model:** Gemini 1.5 Flash (via `@google/generative-ai` & `vision.service.ts`)
+  - **UI Widgets:** React / Next.js 15 App Router (`@nitrostack/widgets`)
+  - **Language:** TypeScript (ES2022 / NodeNext module resolution)
+
+---
+
+## 2. Directory & File Map
+
 ```
-*(All 14 tests pass).*
+c:\Users\admin\OneDrive\Desktop\relink\
+├── OPENCODE_CONTEXT.md                <-- THIS HANDOFF FILE
+├── package.json                       <-- Dependencies (@nitrostack/core, @supabase/supabase-js, zod, next, react)
+├── tsconfig.json                      <-- TS config (rootDir: ./src, outDir: ./dist)
+├── nitrostack.json                    <-- NitroStack MCP server configuration
+│
+├── src/
+│   ├── types/
+│   │   └── index.ts                   <-- Data models (BOMItem, SupplierScore, SourcingZone, ProcurementPlan, etc.)
+│   ├── services/
+│   │   ├── geo.utils.ts               <-- Geospatial utilities, Haversine, 15 pre-defined zones, DBSCAN dynamic clustering
+│   │   ├── sourcing.service.ts        <-- Core sourcing engine: BOM decomposition, progressive search, weighted scoring, zone intelligence, multi-supplier solver, AI reasoning
+│   │   ├── matching.solver.ts         <-- Multi-supplier constraint satisfaction allocation solver
+│   │   ├── pricing.service.ts         <-- Market price benchmarks vs virgin material rates
+│   │   ├── trust.service.ts           <-- Seller trust scores & verification logic
+│   │   ├── vision.service.ts          <-- Gemini LLM chat completion helper
+│   │   ├── notification.service.ts    <-- WhatsApp / SMS notification service
+│   │   └── supabase.service.ts        <-- Supabase client singleton & fluent mock fallback
+│   └── servers/
+│       └── sourcing-server/
+│           ├── sourcing.module.ts     <-- NitroStack Module definition for sourcing
+│           └── sourcing.tools.ts      <-- 8 NitroStack MCP Tools (@Tool decorators + Zod input schemas)
+│
+└── widgets/                           <-- Next.js React Widget Components
+    ├── app/                           <-- Next.js App Router root for widget preview gallery
+    │   ├── layout.tsx                 <-- Root layout
+    │   └── page.tsx                   <-- Live Preview Gallery (http://localhost:3001)
+    ├── bom-visualizer/
+    │   └── page.tsx                   <-- Mode 1 BOM Breakdown visual widget
+    └── procurement-plan/
+        └── page.tsx                   <-- Mode 2 Intelligent Procurement Plan visual widget
+```
 
 ---
 
-## 4. Git Workflow to Submit Pull Request
-```powershell
-# 1. Fetch latest changes from your remote
-git fetch origin
+## 3. Mathematical Formulas & Algorithms
 
-# 2. Stage all implementation files
-git add src/services/geo.utils.ts src/services/sourcing.service.ts src/servers/sourcing-server/sourcing.tools.ts src/services/supabase.service.ts src/types/index.ts widgets/bom-visualizer widgets/procurement-plan OPENCODE_CONTEXT.md
-
-# 3. Commit your changes
-git commit -m "feat(buyer-sourcing): implement intelligent buyer sourcing agent, BOM decomposition, progressive search, and UI widgets"
-
-# 4. Rebase/Merge with remote base branch if updated by teammate
-git rebase origin/main   # or git merge origin/main
-
-# 5. Push branch to GitHub/GitLab
-git push -u origin feature/pranav
+### 3.1 Haversine Distance Formula (`src/services/geo.utils.ts`)
+```typescript
+d = 2 * R * asin( sqrt( sin²(Δlat/2) + cos(lat1) * cos(lat2) * sin²(Δlng/2) ) )
 ```
-Then open the PR on GitHub/GitLab against `main`.
+Where $R = 6371 \text{ km}$. Used for precise factory-to-buyer distance calculation.
+
+### 3.2 Dynamic Industrial Zone Clustering (`discoverZonesFromFactories`)
+Uses DBSCAN spatial clustering with a 15km epsilon radius to group factory locations into geographic clusters, matching against 15 predefined Maharashtra MIDC zones (Chakan, Pimpri, Thane, Bhosari, Tarapur, Talegaon, Ranjangaon, Waluj, Ambad, Kagal, etc.).
+
+### 3.3 Weighted Procurement Score (0–100) (`scoreSupplier`)
+For ranking sellers across 6 weighted dimensions:
+$$\text{Score} = (S_{\text{dist}} \times 0.20) + (S_{\text{price}} \times 0.25) + (S_{\text{grade}} \times 0.15) + (S_{\text{trust}} \times 0.20) + (S_{\text{qty}} \times 0.10) + (S_{\text{verif}} \times 0.10)$$
+
+Where:
+- $S_{\text{dist}} = \max(0, 100 - (\text{dist} / \text{max\_dist}) \times 100)$
+- $S_{\text{price}} = \max(0, 100 - (\text{quoted\_price} / \text{max\_price}) \times 100)$
+- $S_{\text{grade}} = \text{Grade A (100)}, \text{Grade B (70)}, \text{Grade C (40)}$
+- $S_{\text{trust}} = \text{Seller trust score (0--100)}$
+- $S_{\text{qty}} = \min(100, (\text{available\_kg} / \text{required\_kg}) \times 100)$
+- $S_{\text{verif}} = \text{Verified (100)}, \text{Unverified (30)}$
+
+### 3.4 Progressive Radius Expansion Search (`progressiveRadiusSearch`)
+Search expands sequentially: `10km → 25km → 50km → 75km → 100km`.
+The search terminates at the **first radius step** where cumulative available material quantity $\ge$ buyer required quantity.
+
+---
+
+## 4. Complete MCP Tool Catalog (8 Tools in `sourcing.tools.ts`)
+
+| Tool Name | Key Inputs | Main Function |
+|---|---|---|
+| `decompose_product_to_bom` | `product_description` | Uses Gemini LLM to infer raw materials, recyclable substitutes, quantities, and grades. Returns enriched BOM with market benchmarks. |
+| `intelligent_source_materials` | `materials[]`, `buyer_lat`, `buyer_lng`, `max_radius_km` | Full procurement pipeline: progressive search → scoring → zone discovery → multi-supplier combination → AI reasoning. |
+| `search_materials` | `material_type`, `min_quantity_kg`, `max_price_per_kg`, `buyer_lat`, `buyer_lng` | Filtered search returning listings ranked by 6-dimension procurement score. |
+| `recommend_best_place_to_source` | `material_type`, `quantity_kg`, `buyer_lat`, `buyer_lng` | Industrial cluster analysis computing real zone metrics (density, avg price, avg grade, avg trust). |
+| `compare_listings` | `listing_ids[]`, `buyer_lat`, `buyer_lng` | Side-by-side comparison of up to 5 listings with score breakdowns. |
+| `request_quote` | `listing_id`, `quantity_kg`, `buyer_factory_id`, `message` | Sends formal quote request and triggers WhatsApp/SMS notifications to seller. |
+| `get_seller_contact` | `listing_id` | Reveals seller registered mobile number for human-to-human direct negotiation. |
+| `save_search` | `buyer_factory_id`, `material_type`, `max_price_per_kg`, `buyer_lat`, `buyer_lng` | Registers persistent buyer watch criteria. |
+
+---
+
+## 5. UI Widgets & Preview Server
+
+- **`widgets/bom-visualizer/page.tsx`**: Renders Mode 1 BOM card lists with benchmark price comparisons vs virgin rates.
+- **`widgets/procurement-plan/page.tsx`**: Renders Mode 2 dashboard with search radius steps, recommended zones, multi-supplier allocation breakdown, ranked supplier scores, and AI reasoning.
+- **Preview Gallery:** Run `npm run widgets:dev` and open `http://localhost:3001` to view interactive previews of both widgets.
+
+---
+
+## 6. How to Resume Work in OpenCode
+
+1. **Working Git Branch:** `feature/pranav` (Pushed to `origin/feature/pranav`).
+2. **Execute Automated Verification Suite:**
+   ```powershell
+   npx tsx C:\Users\admin\.gemini\antigravity\brain\aac31081-c490-4f74-8ec0-17f7dcd8f8cb\scratch\test_buyer_sourcing.mjs
+   ```
+   *(All 14 tests pass).*
+3. **Execute Manual Tools Runner:**
+   ```powershell
+   npx tsx C:\Users\admin\.gemini\antigravity\brain\aac31081-c490-4f74-8ec0-17f7dcd8f8cb\scratch\manual_verify_tools.mjs
+   ```
+4. **Start Local Widget Preview:**
+   ```powershell
+   npm run widgets:dev
+   ```
+
+---
+*End of Master Technical Handoff Document.*
