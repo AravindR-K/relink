@@ -4,6 +4,8 @@ import { config } from '../config/index.js';
 import { getSupabaseClient } from '../services/supabase.service.js';
 import { analyzeMaterialPhoto, generateEmbedding } from '../services/vision.service.js';
 import { getMarketBenchmark, validateSellerPrice } from '../services/pricing.service.js';
+import { generatePassport } from '../services/passport.service.js';
+import { getTrustBadge } from '../services/trust.service.js';
 
 function createToken(factoryId: string): Promise<string> {
   const secret = new TextEncoder().encode(config.jwt.secret);
@@ -168,6 +170,28 @@ export function createApiRouter(): Router {
       ].join(' ');
       const embedding = await generateEmbedding(embeddingText);
 
+      // Generate Digital Product Passport
+      const trustScore = factory.trust_score || 50;
+      const passport = await generatePassport({
+        materialType: analysis.material_type,
+        grade: analysis.grade,
+        quantityKg: Number(quantity_kg),
+        availability: 'one_time',
+        healthFlags: analysis.health_flags,
+        usageClassification: analysis.usage_classification,
+        confidence: analysis.confidence,
+        sellerPrice: Number(seller_quoted_price_per_kg),
+        benchmark,
+        factoryName: factory.name,
+        factoryIndustry: factory.industry_type,
+        gstVerified: !!factory.gstin,
+        trustScore,
+        trustBadge: getTrustBadge(trustScore).badge,
+        factoryLocation: null,
+        photoUrls,
+        createdAt: new Date().toISOString(),
+      });
+
       // Insert listing
       const { data: listing, error } = await supabase
         .from('listings')
@@ -185,6 +209,7 @@ export function createApiRouter(): Router {
           status: 'verified',
           photo_urls: photoUrls,
           embedding,
+          digital_passport: passport,
         })
         .select('*, factories:factory_id(name, location, trust_score, mobile)')
         .single();
@@ -194,8 +219,13 @@ export function createApiRouter(): Router {
         return;
       }
 
+      // Update passport_id to match listing ID
+      passport.passport_id = listing.id;
+      await supabase.from('listings').update({ digital_passport: passport }).eq('id', listing.id);
+
       res.status(201).json({
-        listing,
+        listing: { ...listing, digital_passport: passport },
+        digital_passport: passport,
         price_validation: priceCheck,
         message: priceCheck.flag ? `Price flagged: ${priceCheck.flag}` : 'Listing created successfully',
       });
@@ -250,6 +280,31 @@ export function createApiRouter(): Router {
       }
 
       res.json({ listing });
+    } catch (err) {
+      res.status(500).json({ error: `Internal error: ${err instanceof Error ? err.message : 'unknown'}` });
+    }
+  });
+
+  // GET /api/listings/:id/passport — Get Digital Product Passport
+  router.get('/listings/:id/passport', async (req: Request, res: Response) => {
+    try {
+      const { data: listing, error } = await supabase
+        .from('listings')
+        .select('digital_passport, material_type, grade, factory_id')
+        .eq('id', req.params.id)
+        .single();
+
+      if (error || !listing) {
+        res.status(404).json({ error: 'Listing not found' });
+        return;
+      }
+
+      if (!listing.digital_passport) {
+        res.status(404).json({ error: 'Digital passport not yet generated for this listing' });
+        return;
+      }
+
+      res.json({ digital_passport: listing.digital_passport });
     } catch (err) {
       res.status(500).json({ error: `Internal error: ${err instanceof Error ? err.message : 'unknown'}` });
     }

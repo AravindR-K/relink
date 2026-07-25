@@ -1,10 +1,11 @@
-import { ToolDecorator as Tool, z, ExecutionContext, UseGuards, Cache, RateLimit } from '@nitrostack/core';
+import { ToolDecorator as Tool, z, ExecutionContext, UseGuards, RateLimit } from '@nitrostack/core';
 import { JwtGuard } from '../../guards/jwt.guard.js';
 import { getSupabaseClient } from '../../services/supabase.service.js';
 import { analyzeMaterialPhoto, generateEmbedding } from '../../services/vision.service.js';
 import { getMarketBenchmark, validateSellerPrice } from '../../services/pricing.service.js';
 import { transcribeVoice, extractListingInfo } from '../../services/voice.service.js';
-import { computeAndUpdateTrustScore } from '../../services/trust.service.js';
+import { computeAndUpdateTrustScore, getTrustBadge } from '../../services/trust.service.js';
+import { generatePassport } from '../../services/passport.service.js';
 
 const PhotoUploadSchema = z.object({
   photo_base64: z.string().describe('Base64-encoded photo of the industrial material'),
@@ -202,7 +203,29 @@ export class IntakeTools {
     ].join(' ');
     const embedding = await generateEmbedding(embeddingText);
 
-    // 10. Insert listing into Supabase
+    // 10. Generate Digital Product Passport
+    const trustScore = factory.trust_score || 50;
+    const passport = await generatePassport({
+      materialType: analysis.material_type,
+      grade: analysis.grade,
+      quantityKg: input.quantity_kg,
+      availability: 'one_time',
+      healthFlags: analysis.health_flags,
+      usageClassification: analysis.usage_classification,
+      confidence: analysis.confidence,
+      sellerPrice: input.seller_quoted_price_per_kg,
+      benchmark,
+      factoryName: factory.name,
+      factoryIndustry: factory.industry_type,
+      gstVerified: !!factory.gstin,
+      trustScore,
+      trustBadge: getTrustBadge(trustScore).badge,
+      factoryLocation: null,
+      photoUrls,
+      createdAt: new Date().toISOString(),
+    });
+
+    // 11. Insert listing into Supabase
     const { data: listing, error } = await supabase
       .from('listings')
       .insert({
@@ -219,20 +242,26 @@ export class IntakeTools {
         status: 'verified',
         photo_urls: photoUrls,
         embedding,
+        digital_passport: passport,
       })
       .select()
       .single();
 
     if (error) throw new Error(`Listing could not be saved: ${error.message}. Please try again.`);
 
-    // 9. Update trust score
-    const trustScore = await computeAndUpdateTrustScore(input.factory_id);
+    // Update passport_id to match listing ID
+    passport.passport_id = listing.id;
+    await supabase.from('listings').update({ digital_passport: passport }).eq('id', listing.id);
+
+    // 12. Update trust score
+    const updatedTrustScore = await computeAndUpdateTrustScore(input.factory_id);
 
     return {
       listing: {
         ...listing,
         seller_mobile: input.mobile,
-        trust_score: trustScore,
+        trust_score: updatedTrustScore,
+        digital_passport: passport,
       },
       ai_analysis: {
         material_type: analysis.material_type,
@@ -244,7 +273,8 @@ export class IntakeTools {
         ai_benchmark_price_range: benchmark ? { min: benchmark.min_price_per_kg, max: benchmark.max_price_per_kg } : null,
         price_validation: priceCheck,
       },
-      message: 'Listing created. Your quoted price has been listed. AI benchmark provided as reference.',
+      digital_passport: passport,
+      message: 'Listing created. Digital Product Passport generated. Your quoted price has been listed. AI benchmark provided as reference.',
     };
   }
 
