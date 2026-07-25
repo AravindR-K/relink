@@ -48,7 +48,7 @@ export function createApiRouter(): Router {
           name: factory_name,
           mobile: String(mobile),
           gstin: gstin || null,
-          location: lat && lng ? { type: 'Point', coordinates: [Number(lng), Number(lat)] } : null,
+          location: lat && lng ? `SRID=4326;POINT(${Number(lng)} ${Number(lat)})` : null,
           industry_type,
           whatsapp_opt_in: Boolean(whatsapp_opt_in),
         })

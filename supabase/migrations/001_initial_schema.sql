@@ -163,11 +163,11 @@ DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM factories LIMIT 1) THEN
 INSERT INTO factories (name, mobile, gstin, location, industry_type, trust_score) VALUES
-  ('Auto Stampings Pvt Ltd', '+91-9876543210', '27AABCD1234E1Z5', ST_GeogFromText('POINT(73.85 18.75)'), 'automotive', 92),
-  ('Precision Dies & Castings', '+91-9876543211', '27BBCDE5678F2Z6', ST_GeogFromText('POINT(73.80 18.62)'), 'metal_fab', 85),
-  ('PolyPlast Industries', '+91-9876543212', '27CCDEF9012G3Z7', ST_GeogFromText('POINT(73.68 18.72)'), 'plastic', 88),
-  ('SteelFab Engineering', '+91-9876543213', '27DDEFG3456H4Z8', ST_GeogFromText('POINT(73.84 18.64)'), 'metal_fab', 74),
-  ('Chennai Copper Works', '+91-9876543214', '33EEFGH7890I5Z9', ST_GeogFromText('POINT(79.95 12.97)'), 'electronics', 90);
+  ('Auto Stampings Pvt Ltd', '+91-9876543210', '27AABCD1234E1Z5', 'SRID=4326;POINT(73.85 18.75)', 'automotive', 92),
+  ('Precision Dies & Castings', '+91-9876543211', '27BBCDE5678F2Z6', 'SRID=4326;POINT(73.80 18.62)', 'metal_fab', 85),
+  ('PolyPlast Industries', '+91-9876543212', '27CCDEF9012G3Z7', 'SRID=4326;POINT(73.68 18.72)', 'plastic', 88),
+  ('SteelFab Engineering', '+91-9876543213', '27DDEFG3456H4Z8', 'SRID=4326;POINT(73.84 18.64)', 'metal_fab', 74),
+  ('Chennai Copper Works', '+91-9876543214', '33EEFGH7890I5Z9', 'SRID=4326;POINT(79.95 12.97)', 'electronics', 90);
 
     INSERT INTO listings (factory_id, material_type, grade, quantity_kg, seller_quoted_price_per_kg, ai_benchmark_price_per_kg, negotiable, usage_classification, health_flags, status) VALUES
       ((SELECT id FROM factories WHERE name = 'Auto Stampings Pvt Ltd'), 'aluminum_scrap', 'B', 500, 140, 148, true, ARRAY['remelting', 'casting', 'die_casting'], ARRAY['surface_oxidation'], 'verified'),
