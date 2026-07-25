@@ -64,7 +64,7 @@ function Nav() {
             <a href="#pricing">Pricing</a>
           </div>
           <a
-            href={`${MCP_URL}/mcp`}
+            href={`${MCP_URL}`}
             target="_blank"
             rel="noreferrer"
             className="nav-action"
