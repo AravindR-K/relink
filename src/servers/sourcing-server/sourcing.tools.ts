@@ -1,4 +1,5 @@
 import { ToolDecorator as Tool, z, ExecutionContext, UseGuards, Cache } from '@nitrostack/core';
+import { JwtGuard } from '../../guards/jwt.guard.js';
 import { getSupabaseClient } from '../../services/supabase.service.js';
 import type { IndustrialZone } from '../../types/index.js';
 
@@ -39,7 +40,7 @@ export class SourcingTools {
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     invocation: { invoking: 'Searching verified listings...', invoked: 'Results ready' },
   })
-  @UseGuards()
+  @UseGuards(JwtGuard)
   @Cache({ ttl: 300, key: (input) => `search:${JSON.stringify(input)}` })
   async searchMaterials(input: z.infer<typeof SearchMaterialsSchema>, ctx: ExecutionContext) {
     const supabase = getSupabaseClient();
@@ -201,7 +202,7 @@ export class SourcingTools {
     inputSchema: GetContactSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   })
-  @UseGuards()
+  @UseGuards(JwtGuard)
   async getSellerContact(input: z.infer<typeof GetContactSchema>, ctx: ExecutionContext) {
     const supabase = getSupabaseClient();
 

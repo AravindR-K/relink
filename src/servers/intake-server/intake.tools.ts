@@ -1,9 +1,11 @@
-import { ToolDecorator as Tool, z, ExecutionContext, UseGuards, Cache, RateLimit } from '@nitrostack/core';
+import { ToolDecorator as Tool, z, ExecutionContext, UseGuards, RateLimit } from '@nitrostack/core';
+import { JwtGuard } from '../../guards/jwt.guard.js';
 import { getSupabaseClient } from '../../services/supabase.service.js';
 import { analyzeMaterialPhoto, generateEmbedding } from '../../services/vision.service.js';
 import { getMarketBenchmark, validateSellerPrice } from '../../services/pricing.service.js';
 import { transcribeVoice, extractListingInfo } from '../../services/voice.service.js';
-import { computeAndUpdateTrustScore } from '../../services/trust.service.js';
+import { computeAndUpdateTrustScore, getTrustBadge } from '../../services/trust.service.js';
+import { generatePassport } from '../../services/passport.service.js';
 
 const PhotoUploadSchema = z.object({
   photo_base64: z.string().describe('Base64-encoded photo of the industrial material'),
@@ -37,9 +39,18 @@ const VoiceIntakeSchema = z.object({
   language: z.string().optional().default('auto').describe('Spoken language code'),
 });
 
+const SIMULATED_SURPLUS: Array<{ material: string; quantity: number; grade: string; usage: string[] }> = [
+  { material: 'aluminum_scrap', quantity: 500, grade: 'B', usage: ['remelting', 'casting', 'die_casting'] },
+  { material: 'steel_offcut', quantity: 1200, grade: 'A', usage: ['remelting', 'rebar_manufacturing', 'forging'] },
+  { material: 'hdpe_regrind', quantity: 300, grade: 'B', usage: ['injection_molding', 'pipe_extrusion'] },
+  { material: 'copper_wire', quantity: 150, grade: 'C', usage: ['remelting', 'wire_drawing'] },
+  { material: 'pp_granulate', quantity: 800, grade: 'A', usage: ['injection_molding', 'packaging'] },
+  { material: 'textile_waste', quantity: 600, grade: 'B', usage: ['padding', 'insulation', 'recycling'] },
+];
+
 const ERPSyncSchema = z.object({
   factory_id: z.string().uuid().describe('Factory ID to sync'),
-  erp_endpoint: z.string().url().describe('ERP system endpoint URL'),
+  erp_endpoint: z.string().url().optional().describe('ERP system endpoint URL. Omit or set to "simulated" for demo mode.'),
   default_price_per_kg: z.number().positive().optional().describe('Default pricing for auto-listings'),
 });
 
@@ -92,33 +103,98 @@ export class IntakeTools {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     invocation: { invoking: 'Analyzing material and creating listing...', invoked: 'Listing created' },
   })
-  @UseGuards()
-  @Cache({ ttl: 3600, key: (input: unknown) => `listing:draft:${(input as Record<string, unknown>).factory_id}:${Date.now()}` })
+  @UseGuards(JwtGuard)
   async createListingWithPrice(input: z.infer<typeof PhotoUploadSchema>, ctx: ExecutionContext) {
     const supabase = getSupabaseClient();
 
-    // 1. Verify factory exists
+    // 1. Validate photo size (< 5MB)
+    const photoBuffer = Buffer.from(input.photo_base64, 'base64');
+    const MAX_PHOTO_SIZE = 5 * 1024 * 1024;
+    if (photoBuffer.length > MAX_PHOTO_SIZE) {
+      throw new Error('Photo is too large. Maximum size is 5MB. Please upload a compressed image.');
+    }
+
+    // 2. Verify factory exists
     const { data: factory } = await supabase
       .from('factories')
       .select('*')
       .eq('id', input.factory_id)
       .single();
 
-    if (!factory) throw new Error('Factory not found. Register first.');
+    if (!factory) {
+      throw new Error('Factory not found. Please register your factory first using register_seller.');
+    }
 
-    // 2. Analyze photo with vision model
+    // 3. Check for duplicate listing (same factory, same material type, last 24h)
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: recentListing } = await supabase
+      .from('listings')
+      .select('id, material_type, created_at')
+      .eq('factory_id', input.factory_id)
+      .gte('created_at', twentyFourHoursAgo)
+      .limit(1)
+      .maybeSingle();
+
+    if (recentListing) {
+      ctx.logger.warn('Duplicate listing detected', {
+        factory_id: input.factory_id,
+        existing: recentListing.id,
+      });
+    }
+
+    // 4. Analyze photo with vision model
     ctx.logger.info('Analyzing material photo');
     const analysis = await analyzeMaterialPhoto(input.photo_base64, input.material_description);
 
-    // 3. Get market benchmark
+    // 5. Handle low AI confidence
+    if (analysis.confidence < 0.5) {
+      return {
+        listing: null,
+        ai_analysis: {
+          material_type: analysis.material_type,
+          grade: 'U' as const,
+          confidence: analysis.confidence,
+          health_flags: analysis.health_flags,
+          usage_classification: analysis.usage_classification,
+          ai_benchmark_price_per_kg: null,
+          ai_benchmark_price_range: null,
+          price_validation: { isReasonable: true, flag: null },
+        },
+        message: 'The AI could not clearly identify this material (confidence too low). Please take another photo with better lighting and a clear view of the material.',
+      };
+    }
+
+    // 6. Get market benchmark
     const benchmark = getMarketBenchmark(analysis.material_type, analysis.grade);
 
-    // 4. Validate seller's quoted price
+    // 7. Validate seller's quoted price
     const priceCheck = benchmark
       ? validateSellerPrice(input.seller_quoted_price_per_kg, benchmark)
       : { isReasonable: true, flag: null };
 
-    // 5. Generate embedding for vector similarity search
+    // 8. Upload photo to Supabase Storage
+    let photoUrls: string[] = [];
+    try {
+      const photoPath = `listing_photos/${input.factory_id}/${Date.now()}.jpg`;
+      const { data: upload } = await supabase.storage
+        .from('listings')
+        .upload(photoPath, photoBuffer, {
+          contentType: 'image/jpeg',
+          upsert: false,
+        });
+
+      if (upload?.path) {
+        const { data: publicUrl } = supabase.storage
+          .from('listings')
+          .getPublicUrl(upload.path);
+        photoUrls = [publicUrl.publicUrl];
+      }
+    } catch (storageError) {
+      ctx.logger.warn('Photo upload failed, continuing without storage', { error: String(storageError) });
+      photoUrls = [`listing_photos/${input.factory_id}/${Date.now()}.jpg`];
+    }
+
+    // 9. Generate embedding for vector similarity search
     const embeddingText = [
       analysis.material_type,
       analysis.grade,
@@ -127,7 +203,29 @@ export class IntakeTools {
     ].join(' ');
     const embedding = await generateEmbedding(embeddingText);
 
-    // 6. Insert listing into Supabase
+    // 10. Generate Digital Product Passport
+    const trustScore = factory.trust_score || 50;
+    const passport = await generatePassport({
+      materialType: analysis.material_type,
+      grade: analysis.grade,
+      quantityKg: input.quantity_kg,
+      availability: 'one_time',
+      healthFlags: analysis.health_flags,
+      usageClassification: analysis.usage_classification,
+      confidence: analysis.confidence,
+      sellerPrice: input.seller_quoted_price_per_kg,
+      benchmark,
+      factoryName: factory.name,
+      factoryIndustry: factory.industry_type,
+      gstVerified: !!factory.gstin,
+      trustScore,
+      trustBadge: getTrustBadge(trustScore).badge,
+      factoryLocation: null,
+      photoUrls,
+      createdAt: new Date().toISOString(),
+    });
+
+    // 11. Insert listing into Supabase
     const { data: listing, error } = await supabase
       .from('listings')
       .insert({
@@ -142,22 +240,28 @@ export class IntakeTools {
         usage_classification: analysis.usage_classification,
         health_flags: analysis.health_flags,
         status: 'verified',
-        photo_urls: [`listing_photos/${input.factory_id}/${Date.now()}.jpg`],
+        photo_urls: photoUrls,
         embedding,
+        digital_passport: passport,
       })
       .select()
       .single();
 
-    if (error) throw new Error(`Listing creation failed: ${error.message}`);
+    if (error) throw new Error(`Listing could not be saved: ${error.message}. Please try again.`);
 
-    // 7. Update trust score
-    const trustScore = await computeAndUpdateTrustScore(input.factory_id);
+    // Update passport_id to match listing ID
+    passport.passport_id = listing.id;
+    await supabase.from('listings').update({ digital_passport: passport }).eq('id', listing.id);
+
+    // 12. Update trust score
+    const updatedTrustScore = await computeAndUpdateTrustScore(input.factory_id);
 
     return {
       listing: {
         ...listing,
         seller_mobile: input.mobile,
-        trust_score: trustScore,
+        trust_score: updatedTrustScore,
+        digital_passport: passport,
       },
       ai_analysis: {
         material_type: analysis.material_type,
@@ -169,7 +273,8 @@ export class IntakeTools {
         ai_benchmark_price_range: benchmark ? { min: benchmark.min_price_per_kg, max: benchmark.max_price_per_kg } : null,
         price_validation: priceCheck,
       },
-      message: 'Listing created. Your quoted price has been listed. AI benchmark provided as reference.',
+      digital_passport: passport,
+      message: 'Listing created. Digital Product Passport generated. Your quoted price has been listed. AI benchmark provided as reference.',
     };
   }
 
@@ -255,50 +360,63 @@ export class IntakeTools {
   })
   @RateLimit({ requests: 60, window: '1h' })
   async syncErpSurplus(input: z.infer<typeof ERPSyncSchema>, ctx: ExecutionContext) {
-    try {
-      const response = await fetch(input.erp_endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get_disposal_queue', factory_id: input.factory_id }),
-      });
-      const surplusItems = await response.json() as Array<{ material: string; quantity: number }>;
+    const supabase = getSupabaseClient();
+    const listings: unknown[] = [];
 
-      const listings: unknown[] = [];
-      const supabase = getSupabaseClient();
+    // Determine surplus data source — real ERP or simulation
+    let surplusItems: Array<{ material: string; quantity: number; grade: string; usage: string[] }>;
+    const isSimulated = !input.erp_endpoint || input.erp_endpoint.includes('simulated');
 
-      for (const item of surplusItems) {
-        const { data: listing } = await supabase
-          .from('listings')
-          .insert({
-            factory_id: input.factory_id,
-            material_type: item.material,
-            quantity_kg: item.quantity,
-            seller_quoted_price_per_kg: input.default_price_per_kg || 0,
-            status: 'pending_verification',
-            availability: 'recurring',
-            grade: 'U',
-            negotiable: true,
-            usage_classification: [],
-            health_flags: ['erp_auto_sync'],
-            photo_urls: [],
-          })
-          .select()
-          .single();
-        if (listing) listings.push(listing);
+    if (isSimulated) {
+      ctx.logger.info('ERP simulation mode — using demo surplus data');
+      surplusItems = SIMULATED_SURPLUS;
+    } else {
+      try {
+        const erpUrl = input.erp_endpoint as string;
+        const response = await fetch(erpUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'get_disposal_queue', factory_id: input.factory_id }),
+        });
+        surplusItems = await response.json() as typeof SIMULATED_SURPLUS;
+      } catch (error) {
+        ctx.logger.error('ERP sync failed, falling back to simulation', { endpoint: input.erp_endpoint });
+        surplusItems = SIMULATED_SURPLUS;
       }
-
-      return {
-        listings_created: listings.length,
-        listings,
-        message: `${listings.length} listings auto-created from ERP surplus data`,
-      };
-    } catch (error) {
-      ctx.logger.error('ERP sync failed', { endpoint: input.erp_endpoint });
-      return {
-        listings_created: 0,
-        listings: [],
-        message: 'ERP sync requires valid endpoint. For hackathon, this simulates the connection.',
-      };
     }
+
+    for (const item of surplusItems) {
+      const { data: listing, error } = await supabase
+        .from('listings')
+        .insert({
+          factory_id: input.factory_id,
+          material_type: item.material,
+          grade: item.grade || 'U',
+          quantity_kg: item.quantity,
+          seller_quoted_price_per_kg: input.default_price_per_kg || 0,
+          status: 'pending_verification',
+          availability: 'recurring',
+          negotiable: true,
+          usage_classification: item.usage || [],
+          health_flags: ['erp_auto_sync'],
+          photo_urls: [],
+        })
+        .select()
+        .single();
+
+      if (error) {
+        ctx.logger.error('Failed to create listing from ERP sync', { material: item.material, error: error.message });
+      }
+      if (listing) listings.push(listing);
+    }
+
+    return {
+      listings_created: listings.length,
+      listings,
+      simulated: isSimulated,
+      message: isSimulated
+        ? `[SIMULATION] ${listings.length} listings auto-created from simulated ERP data. Connect a real ERP endpoint for production.`
+        : `${listings.length} listings auto-created from ERP surplus data`,
+    };
   }
 }
