@@ -10,7 +10,9 @@
     "nitrostack:start": "nitrostack-cli build && node dist/main.js",
     "widgets:dev": "cd widgets && next dev -p 3001",
     "widgets:build": "cd widgets && next build",
-    "db:migrate": "supabase db push",
+    "postinstall": "nitrostack-cli install",
+    "db:migrate": "npx supabase db push",
+    "db:migrate:ci": "npx supabase db push --password $SUPABASE_DB_PASSWORD",
     "db:seed": "supabase db seed run",
     "lint": "eslint src/**/*.ts",
     "typecheck": "tsc --noEmit"
