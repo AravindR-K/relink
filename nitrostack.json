@@ -14,11 +14,5 @@
     "./src/servers/matching-server/matching.module.js",
     "./src/servers/logistics-server/logistics.module.js",
     "./src/servers/compliance-server/compliance.module.js"
-  ],
-  "widgets": {
-    "listingPreview": "widgets/listing-preview",
-    "searchResultsGrid": "widgets/search-results-grid",
-    "locationRecommendationMap": "widgets/location-recommendation-map",
-    "complianceDashboard": "widgets/compliance-dashboard"
-  }
+  ]
 }
