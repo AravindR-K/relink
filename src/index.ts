@@ -6,6 +6,7 @@ async function bootstrap() {
   const server = await McpApplicationFactory.create(AppModule);
   console.log('[CircuLink] 6 agents loaded — MCP server starting');
   console.log('[CircuLink] Intake | Verification | Sourcing | Matching | Logistics | Prediction');
+  await server.start();
 }
 
 bootstrap().catch((error) => {
