@@ -19,6 +19,7 @@ export class JwtGuard implements Guard {
         scopes: (payload.scopes as string[]) || [],
       };
 
+
       return true;
     } catch {
       return false;
