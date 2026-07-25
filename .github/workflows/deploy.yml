@@ -17,7 +17,6 @@ jobs:
   migrate:
     needs: typecheck
     runs-on: ubuntu-latest
-    environment: SUPABASE_PROJECT_REF
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
