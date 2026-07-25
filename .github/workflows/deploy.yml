@@ -1,0 +1,29 @@
+name: Deploy CircuLink
+
+on:
+  push:
+    branches: [main, master]
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  # NitroCloud auto-deploys on push when connected.
+  # Connect: https://cloud.nitrostack.ai → Import GitHub repo → Auto-deploy on push
+
+  docker:
+    needs: typecheck
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t circu-link .
+      - name: Run smoke test
+        run: docker run --rm -d --name circu-test circu-link; sleep 5; docker logs circu-test; docker stop circu-test

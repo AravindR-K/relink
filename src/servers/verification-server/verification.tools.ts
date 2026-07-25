@@ -1,4 +1,4 @@
-import { ToolDecorator as Tool, z, ExecutionContext, UseGuards, Cache, RateLimit, Widget } from '@nitrostack/core';
+import { ToolDecorator as Tool, z, ExecutionContext, UseGuards, Cache, RateLimit } from '@nitrostack/core';
 import { getSupabaseClient } from '../../services/supabase.service.js';
 import { analyzeMaterialPhoto } from '../../services/vision.service.js';
 import { getMarketBenchmark, validateSellerPrice } from '../../services/pricing.service.js';
@@ -32,7 +32,6 @@ export class VerificationTools {
     invocation: { invoking: 'Running health analysis...', invoked: 'Analysis complete' },
   })
   @UseGuards()
-  @Widget('material-health-dashboard')
   async analyzeMaterialHealth(input: z.infer<typeof AnalyzeHealthSchema>, ctx: ExecutionContext) {
     const supabase = getSupabaseClient();
 
@@ -120,7 +119,6 @@ export class VerificationTools {
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   })
   @Cache({ ttl: 3600 })
-  @Widget('price-suggestion-card')
   async suggestFairPrice(
     input: { material_type: string; grade: 'A' | 'B' | 'C' | 'U' },
     ctx: ExecutionContext

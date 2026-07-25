@@ -1,4 +1,4 @@
-import { ToolDecorator as Tool, z, ExecutionContext, UseGuards, Cache, RateLimit, Widget } from '@nitrostack/core';
+import { ToolDecorator as Tool, z, ExecutionContext, UseGuards, Cache, RateLimit } from '@nitrostack/core';
 import { getSupabaseClient } from '../../services/supabase.service.js';
 import { analyzeMaterialPhoto, generateEmbedding } from '../../services/vision.service.js';
 import { getMarketBenchmark, validateSellerPrice } from '../../services/pricing.service.js';
@@ -52,7 +52,6 @@ export class IntakeTools {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     invocation: { invoking: 'Registering your factory...', invoked: 'Registration complete' },
   })
-  @Widget('listing-preview')
   async registerSeller(input: z.infer<typeof RegisterSellerSchema>, ctx: ExecutionContext) {
     const supabase = getSupabaseClient();
 
@@ -95,7 +94,6 @@ export class IntakeTools {
   })
   @UseGuards()
   @Cache({ ttl: 3600, key: (input: unknown) => `listing:draft:${(input as Record<string, unknown>).factory_id}:${Date.now()}` })
-  @Widget('listing-preview')
   async createListingWithPrice(input: z.infer<typeof PhotoUploadSchema>, ctx: ExecutionContext) {
     const supabase = getSupabaseClient();
 
