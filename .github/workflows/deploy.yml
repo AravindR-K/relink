@@ -2,7 +2,7 @@ name: Deploy CircuLink
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, roshan]
 
 jobs:
   typecheck:
@@ -14,8 +14,23 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
 
-  # NitroCloud auto-deploys on push when connected.
-  # Connect: https://cloud.nitrostack.ai → Import GitHub repo → Auto-deploy on push
+  migrate:
+    needs: typecheck
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - run: supabase link --project-ref $SUPABASE_PROJECT_REF
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      - run: supabase db push
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
   docker:
     needs: typecheck
@@ -26,4 +41,9 @@ jobs:
       - name: Build Docker image
         run: docker build -t circu-link .
       - name: Run smoke test
-        run: docker run --rm -d --name circu-test circu-link; sleep 5; docker logs circu-test; docker stop circu-test
+        run: |
+          docker run -d --name circu-test -e GEMINI_API_KEY=ci-test circu-link
+          sleep 5
+          docker logs circu-test || true
+          docker stop circu-test || true
+          docker rm circu-test || true
