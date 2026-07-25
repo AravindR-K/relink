@@ -387,10 +387,12 @@ export class SourcingTools {
     if (!factory) throw new Error('Seller factory not found');
 
     // Log contact reveal for trust scoring and audit trail
-    await supabase.from('contact_reveals').insert({
-      listing_id: input.listing_id,
-      revealed_at: new Date().toISOString(),
-    }).then(() => { /* fire and forget */ }).catch(() => { /* non-critical */ });
+    try {
+      await supabase.from('contact_reveals').insert({
+        listing_id: input.listing_id,
+        revealed_at: new Date().toISOString(),
+      });
+    } catch { /* non-critical */ }
 
     ctx.logger.info('Seller contact revealed to buyer', { listing_id: input.listing_id });
 
@@ -531,11 +533,13 @@ export class SourcingTools {
     const buyerName = buyer?.name || 'A buyer';
 
     // Log the quote request as a contact reveal
-    await supabase.from('contact_reveals').insert({
-      listing_id: input.listing_id,
-      buyer_id: input.buyer_factory_id,
-      revealed_at: new Date().toISOString(),
-    }).catch(() => { /* non-critical */ });
+    try {
+      await supabase.from('contact_reveals').insert({
+        listing_id: input.listing_id,
+        buyer_id: input.buyer_factory_id,
+        revealed_at: new Date().toISOString(),
+      });
+    } catch { /* non-critical */ }
 
     // Send WhatsApp notification to seller
     const { sendWhatsAppNotification } = await import('../../services/notification.service.js');
