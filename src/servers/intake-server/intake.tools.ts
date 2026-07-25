@@ -1,4 +1,5 @@
 import { ToolDecorator as Tool, z, ExecutionContext, UseGuards, Cache, RateLimit } from '@nitrostack/core';
+import { JwtGuard } from '../../guards/jwt.guard.js';
 import { getSupabaseClient } from '../../services/supabase.service.js';
 import { analyzeMaterialPhoto, generateEmbedding } from '../../services/vision.service.js';
 import { getMarketBenchmark, validateSellerPrice } from '../../services/pricing.service.js';
@@ -92,7 +93,7 @@ export class IntakeTools {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     invocation: { invoking: 'Analyzing material and creating listing...', invoked: 'Listing created' },
   })
-  @UseGuards()
+  @UseGuards(JwtGuard)
   @Cache({ ttl: 3600, key: (input: unknown) => `listing:draft:${(input as Record<string, unknown>).factory_id}:${Date.now()}` })
   async createListingWithPrice(input: z.infer<typeof PhotoUploadSchema>, ctx: ExecutionContext) {
     const supabase = getSupabaseClient();

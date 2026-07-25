@@ -1,10 +1,15 @@
-import { McpApp, Module } from '@nitrostack/core';
+import { McpApp, Module, JWTModule } from '@nitrostack/core';
 import { IntakeModule } from './servers/intake-server/intake.module.js';
 import { VerificationModule } from './servers/verification-server/verification.module.js';
 import { SourcingModule } from './servers/sourcing-server/sourcing.module.js';
 import { MatchingModule } from './servers/matching-server/matching.module.js';
 import { LogisticsModule } from './servers/logistics-server/logistics.module.js';
 import { ComplianceModule } from './servers/compliance-server/compliance.module.js';
+
+JWTModule.forRoot({
+  secretEnvVar: 'JWT_SECRET',
+  expiresIn: '24h',
+});
 
 @McpApp({
   module: AppModule,

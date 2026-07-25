@@ -1,4 +1,5 @@
 import { ToolDecorator as Tool, z, ExecutionContext, UseGuards, Cache } from '@nitrostack/core';
+import { JwtGuard } from '../../guards/jwt.guard.js';
 import { getSupabaseClient } from '../../services/supabase.service.js';
 import { notifyBuyersAboutForecast } from '../../services/notification.service.js';
 
@@ -129,7 +130,7 @@ export class ComplianceTools {
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     invocation: { invoking: 'Generating compliance report...', invoked: 'Report ready' },
   })
-  @UseGuards()
+  @UseGuards(JwtGuard)
   async getComplianceReport(input: z.infer<typeof ComplianceReportSchema>, ctx: ExecutionContext) {
     const supabase = getSupabaseClient();
 
